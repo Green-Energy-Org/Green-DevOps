@@ -1,12 +1,10 @@
 name: CI
 
-
 on:
   push:
     branches: [main]
-  workflow_dispatch:
+  workflow_dispatch: 
 
-defaults:
 env:
   PYTHON_VERSION: "3.13"
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/fastapi-clean-example
