@@ -78,7 +78,7 @@ jobs:
 # -----------------------
 # TEST
 # -----------------------
-test:
+  test:
     name: Test
     needs: install
     runs-on: self-hosted
