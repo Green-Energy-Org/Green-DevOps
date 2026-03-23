@@ -64,6 +64,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: astral-sh/setup-uv@v6
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: venv
           path: .venv
@@ -81,6 +82,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: astral-sh/setup-uv@v6
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: venv
           path: .venv
@@ -144,6 +146,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: docker-image
           path: /tmp
@@ -161,11 +164,13 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: astral-sh/setup-uv@v6
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: venv
           path: .venv
       - run: chmod -R u+x .venv/bin
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: docker-image
           path: /tmp
