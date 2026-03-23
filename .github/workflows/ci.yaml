@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-  workflow_dispatch: 
+  workflow_dispatch:
 
 env:
   PYTHON_VERSION: "3.13"
@@ -14,79 +14,28 @@ jobs:
   setup:
     name: Setup
     runs-on: self-hosted
-    outputs:
-      cache-key: ${{ steps.cache-key.outputs.key }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: astral-sh/setup-uv@v6
-      - id: cache-key
-        run: echo "key=venv-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-${{ hashFiles('uv.lock') }}" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
-        id: cache-restore
-        with:
-          path: .venv
-          key: ${{ steps.cache-key.outputs.key }}
-      - if: steps.cache-restore.outputs.cache-hit != 'true'
-        run: uv sync --locked --group dev
+      - run: uv sync --locked --group dev
 
-  install:
-    name: Install
+  lint:
+    name: Lint
     needs: setup
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: astral-sh/setup-uv@v6
-      - uses: actions/cache@v4
-        with:
-          path: .venv
-          key: ${{ needs.setup.outputs.cache-key }}
-      - run: uv sync --locked --group dev
-      - uses: actions/upload-artifact@v4
-        with:
-          name: venv
-          path: .venv
-          retention-days: 1
-
-  lint:
-    name: Lint
-    needs: install
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: astral-sh/setup-uv@v6
-      - uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: venv
-          path: .venv
-      - run: chmod -R u+x .venv/bin
       - run: uv run make code.check
 
   build-artifact:
     name: Build artifact
-    needs: install
+    needs: setup
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: astral-sh/setup-uv@v6
-      - uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: venv
-          path: .venv
-      - run: chmod -R u+x .venv/bin
       - run: uv build --out-dir dist/
       - uses: actions/upload-artifact@v4
         with:
@@ -96,19 +45,10 @@ jobs:
 
   test:
     name: Test
-    needs: install
+    needs: setup
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: astral-sh/setup-uv@v6
-      - uses: actions/download-artifact@v4
-        with:
-          name: venv
-          path: .venv
-      - run: chmod -R u+x .venv/bin
       - run: uv run pytest --tb=short --cov=src --cov-report=xml --cov-report=term-missing
       - uses: actions/upload-artifact@v4
         with:
@@ -139,14 +79,13 @@ jobs:
     name: Docker push
     needs: docker-build
     runs-on: self-hosted
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
           name: docker-image
           path: /tmp
@@ -159,18 +98,7 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: astral-sh/setup-uv@v6
       - uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: venv
-          path: .venv
-      - run: chmod -R u+x .venv/bin
-      - uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
           name: docker-image
           path: /tmp
