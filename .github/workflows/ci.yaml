@@ -11,28 +11,59 @@ env:
 
 jobs:
 
-  setup:
-    name: Setup
+# -----------------------
+# INSTALL / VERIFY TOOLS
+# -----------------------
+  install:
+    name: Install Dependencies
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: astral-sh/setup-uv@v6
-      - run: uv sync --locked --group dev
 
+      - name: Verify or install Python 3.13
+        run: |
+          if python3 --version 2>/dev/null | grep -q "3\.13"; then
+            echo "[OK] Python $(python3 --version) already installed"
+          else
+            echo "[*] Python 3.13 not found — installing via deadsnakes PPA"
+            sudo apt-get update -qq
+            sudo apt-get install -y software-properties-common
+            sudo add-apt-repository -y ppa:deadsnakes/ppa
+            sudo apt-get update -qq
+            sudo apt-get install -y python3.13 python3.13-venv python3.13-distutils
+          fi
+
+      - name: Verify or install uv
+        run: |
+          if command -v uv &>/dev/null; then
+            echo "[OK] uv $(uv --version) already installed"
+          else
+            echo "[*] uv not found — installing"
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install project dependencies
+        run: uv sync --locked --group dev
+
+# -----------------------
+# LINT
+# -----------------------
   lint:
     name: Lint
-    needs: setup
+    needs: install
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - run: uv run make code.check
 
+# -----------------------
+# BUILD ARTIFACT
+# -----------------------
   build-artifact:
     name: Build artifact
-    needs: setup
+    needs: install
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
@@ -43,9 +74,12 @@ jobs:
           path: dist/
           retention-days: 7
 
+# -----------------------
+# TEST
+# -----------------------
   test:
     name: Test
-    needs: setup
+    needs: install
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
@@ -56,6 +90,9 @@ jobs:
           path: coverage.xml
           retention-days: 7
 
+# -----------------------
+# DOCKER BUILD
+# -----------------------
   docker-build:
     name: Docker build
     needs: [lint, test, build-artifact]
@@ -75,6 +112,9 @@ jobs:
           path: /tmp/app-image.tar.gz
           retention-days: 1
 
+# -----------------------
+# DOCKER PUSH
+# -----------------------
   docker-push:
     name: Docker push
     needs: docker-build
@@ -92,6 +132,9 @@ jobs:
       - run: docker load < /tmp/app-image.tar.gz
       - run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/fastapi-clean-example:latest
 
+# -----------------------
+# DOCKER TEST
+# -----------------------
   docker-test:
     name: Docker test
     needs: docker-build
