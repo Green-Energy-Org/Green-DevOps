@@ -8,6 +8,8 @@ on:
 env:
   PYTHON_VERSION: "3.13"
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/fastapi-clean-example
+  PROJECT_NAME: "FastApi App"
+  PROJECT_CATEGORY: "DEV"
 
 jobs:
 
@@ -147,33 +149,62 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          
       - uses: astral-sh/setup-uv@v6
+
       - uses: actions/download-artifact@v4
         with:
           name: docker-image
           path: /tmp
-      - run: docker load < /tmp/app-image.tar.gz
+
+      - name: Load Docker image
+        run: docker load < /tmp/app-image.tar.gz
+
+      - name: Create Mock Config (Fix KeyError)
+        # Cette étape crée les fichiers nécessaires pour que toml_config_manager.py ne plante pas
+        run: |
+          mkdir -p config
+          cat <<EOF > config/local.toml
+          [postgres]
+          USER = "ci_user"
+          PASSWORD = "ci_password"
+          DB = "ci_db"
+          PORT = 5432
+          HOST = "db"
+          EOF
+          # On crée un fichier de secrets vide pour éviter le WARNING
+          touch config/secrets.toml
+
       - name: Generate .env
         env:
           APP_ENV: local
         run: uv run config/toml_config_manager.py
+
       - name: Start stack
         run: |
           cd config/local
+          # On s'assure que l'image utilisée dans docker-compose correspond à celle chargée
           docker compose --env-file .env.local up -d
+
       - name: Wait for health
         run: |
           timeout 60s bash -s <<'BASH'
-          until curl -sf http://127.0.0.1:9999/api/v1/health; do sleep 2; done
+          until curl -sf http://127.0.0.1:9999/api/v1/health; do 
+            echo "Waiting for API..."
+            sleep 2
+          done
           BASH
+
       - name: Smoke test — signup
         run: |
           curl -f -X POST -H "Content-Type: application/json" \
             -d '{"username": "ci_user", "password": "ci_password1!"}' \
             http://127.0.0.1:9999/api/v1/account/signup
+
       - name: Smoke test — duplicate returns 409
         run: |
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
@@ -181,20 +212,26 @@ jobs:
             -d '{"username": "ci_user", "password": "ci_password1!"}' \
             http://127.0.0.1:9999/api/v1/account/signup)
           [[ "$STATUS" == "409" ]] || { echo "Expected 409, got $STATUS"; exit 1; }
+
       - name: Dump logs on failure
         if: failure()
         run: cd config/local && docker compose --env-file .env.local logs --no-color
+
       - name: Tear down
         if: always()
-        run: cd config/local && docker compose --env-file .env.local down -v
+        run: |
+          cd config/local && docker compose --env-file .env.local down -v
+          # Nettoyage de l'image de test pour libérer de l'espace sur le self-hosted
+          docker rmi ${{ secrets.DOCKERHUB_USERNAME }}/fastapi-clean-example:latest || true
 
-  # -----------------------
+# -----------------------
 # DEPLOY (PRODUCTION)
 # -----------------------
   deploy:
     name: Deploy to Production
-    needs: [docker-push, docker-test] # On ne déploie que si les tests Docker et le push réussissent
-    runs-on: ubuntu-latest # Peut être ubuntu-latest même si le reste est self-hosted
+    needs: [docker-push, docker-test]
+    runs-on: ubuntu-latest
+    # Correction : "main" au lieu de "master" pour matcher ton trigger "on: push: branches: [main]"
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
@@ -207,26 +244,27 @@ jobs:
           username: ${{ secrets.PROD_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Aller dans le dossier du projet
+            # Aller dans le dossier du projet sur le serveur
             cd /home/${{ secrets.PROD_USERNAME }}/app
             
-            # Pull de la dernière image
-            docker pull ${{ env.IMAGE_NAME }}:latest
+            # Se connecter à DockerHub si nécessaire (optionnel si image publique)
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
             
-            # Mise à jour sans interruption (Zero Downtime-ish)
-            # On utilise --remove-orphans pour nettoyer les vieux containers
+            # Pull de la dernière image
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/fastapi-clean-example:latest
+            
+            # Redémarrage propre
             docker compose up -d --remove-orphans
             
-            # Vérification de santé post-déploiement
+            # Vérification de santé (ajuste le nom du container 'fastapi-app' si différent)
             echo "Checking service health..."
-            sleep 10
-            if [ $(docker inspect -f '{{.State.Running}}' fastapi-app) != "true" ]; then
-              echo "Deployment failed! Rolling back..."
-              # Ici on pourrait spécifier une version précise pour le rollback
+            sleep 15
+            if [ "$(docker inspect -f '{{.State.Running}}' fastapi-app)" != "true" ]; then
+              echo "Error: Container is not running!"
+              docker logs fastapi-app --tail 20
               exit 1
             fi
-            echo "Deployment successful!"
-
+            echo "🚀 Deployment successful!"
 # -----------------------
 # NOTIFICATIONS (OPTIONNEL)
 # -----------------------
