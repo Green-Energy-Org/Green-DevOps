@@ -239,13 +239,14 @@ jobs:
 # -----------------------
 # DEPLOY (PRODUCTION)
 # -----------------------
-deploy:
+  deploy:
     name: Local Deploy
     needs: [docker-push]
     runs-on: self-hosted
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Quick Deploy
         run: |
@@ -265,9 +266,7 @@ deploy:
           docker compose --env-file .env.local up -d --remove-orphans
           
           echo "🚀 Deploy terminé sur http://localhost:9999"
-
-          
- #  deploy:
+#  deploy:
 #    name: Deploy to Production
 #    needs: [docker-push]
 #    runs-on: self-hosted
