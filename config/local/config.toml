@@ -1,5 +1,6 @@
 # PostgreSQL
 [postgres]
+USER = "postgres"
 DB = "web_app_db_pg"
 HOST = "localhost"
 PORT = 5432
