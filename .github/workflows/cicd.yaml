@@ -12,7 +12,20 @@ env:
   PROJECT_CATEGORY: "DEV"
 
 jobs:
-
+  GUIprep:
+    name: Dynamic GUI Patch
+    runs-on: self-hosted
+    steps:
+      - name: Execute Patch Script
+        run: |
+          # On s'assure que le script est exécutable
+          chmod +x /home/medyassine/GreenDevOps/ecofloc/gui/patch_gui.sh
+          
+          # Le script va attendre tout seul que les fichiers apparaissent dans /dev/shm
+          bash /home/medyassine/GreenDevOps/ecofloc/gui/patch_gui.sh
+          
+          # On s'assure que l'utilisateur du GUI peut lire les fichiers créés par root
+          sudo chmod 666 /dev/shm/ECOFLOC_*
 # -----------------------
 # SETUP
 # -----------------------
@@ -226,44 +239,72 @@ jobs:
 # -----------------------
 # DEPLOY (PRODUCTION)
 # -----------------------
-  deploy:
-    name: Deploy to Production
+deploy:
+    name: Local Deploy
     needs: [docker-push]
     runs-on: self-hosted
-    # Correction : "main" au lieu de "master" pour matcher ton trigger "on: push: branches: [main]"
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment:
-      name: production
-      url: http://votre-ip-ou-domaine.com
+    if: github.ref == 'refs/heads/main'
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.PROD_HOST }}
-          username: ${{ secrets.PROD_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            # Aller dans le dossier du projet sur le serveur
-            cd /home/${{ secrets.PROD_USERNAME }}/app
-            
-            # Se connecter à DockerHub si nécessaire (optionnel si image publique)
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-            
-            # Pull de la dernière image
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/fastapi-clean-example:latest
-            
-            # Redémarrage propre
-            docker compose up -d --remove-orphans
-            
-            # Vérification de santé (ajuste le nom du container 'fastapi-app' si différent)
-            echo "Checking service health..."
-            sleep 15
-            if [ "$(docker inspect -f '{{.State.Running}}' fastapi-app)" != "true" ]; then
-              echo "Error: Container is not running!"
-              docker logs fastapi-app --tail 20
-              exit 1
-            fi
-            echo "🚀 Deployment successful!"
+      - uses: actions/checkout@v4
+
+      - name: Quick Deploy
+        run: |
+          # 1. Préparer l'environnement
+          mkdir -p config
+          echo '[postgres]' > config/local.toml
+          echo 'USER = "postgres"' >> config/local.toml
+          echo 'PASSWORD = "${{ secrets.DB_PASSWORD }}"' >> config/local.toml
+          echo 'DB = "web_app_db_pg"' >> config/local.toml
+          echo 'HOST = "db"' >> config/local.toml
+          echo 'PORT = 5432' >> config/local.toml
+          
+          # 2. Générer le .env et lancer
+          uv run config/toml_config_manager.py
+          cd config/local
+          docker compose --env-file .env.local pull
+          docker compose --env-file .env.local up -d --remove-orphans
+          
+          echo "🚀 Deploy terminé sur http://localhost:9999"
+
+          
+ #  deploy:
+#    name: Deploy to Production
+#    needs: [docker-push]
+#    runs-on: self-hosted
+#    # Correction : "main" au lieu de "master" pour matcher ton trigger "on: push: branches: [main]"
+#    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+#    environment:
+#      name: production
+#      url: http://votre-ip-ou-domaine.com
+#    steps:
+#      - name: Deploy via SSH
+#        uses: appleboy/ssh-action@v1.0.3
+#        with:
+#          host: ${{ secrets.PROD_HOST }}
+#          username: ${{ secrets.PROD_USERNAME }}
+#          key: ${{ secrets.SSH_PRIVATE_KEY }}
+#          script: |
+#            # Aller dans le dossier du projet sur le serveur
+#            cd /home/${{ secrets.PROD_USERNAME }}/app
+#            
+#            # Se connecter à DockerHub si nécessaire (optionnel si image publique)
+#            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+#            
+#            # Pull de la dernière image
+#            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/fastapi-clean-example:latest
+#            
+#            # Redémarrage propre
+#            docker compose up -d --remove-orphans
+#            
+#            # Vérification de santé (ajuste le nom du container 'fastapi-app' si différent)
+#            echo "Checking service health..."
+#            sleep 15
+#            if [ "$(docker inspect -f '{{.State.Running}}' fastapi-app)" != "true" ]; then
+#              echo "Error: Container is not running!"
+#              docker logs fastapi-app --tail 20
+#              exit 1
+#            fi
+#            echo "🚀 Deployment successful!"
 # -----------------------
 # NOTIFICATIONS (OPTIONNEL)
 # -----------------------
