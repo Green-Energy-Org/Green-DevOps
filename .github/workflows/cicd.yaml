@@ -197,9 +197,14 @@ jobs:
         run: uv run config/toml_config_manager.py
 
       - name: Start stack
+        env:
+          IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/fastapi-clean-example
+          APP_ENV: local
         run: |
           cd config/local
-          # On s'assure que l'image utilisée dans docker-compose correspond à celle chargée
+          # On s'assure que les variables sont exportées dans le shell du step
+          export IMAGE_NAME=$IMAGE_NAME
+          export APP_ENV=$APP_ENV
           docker compose --env-file .env.local up -d
 
       - name: Wait for health
@@ -247,6 +252,13 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
 
       - name: Quick Deploy
         run: |
