@@ -6,26 +6,13 @@ on:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: "3.13"
+  PYTHON_VERSION: "3.9.2"
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/fastapi-clean-example
   PROJECT_NAME: "FastApi App"
   PROJECT_CATEGORY: "DEV"
 
 jobs:
-  GUIprep:
-    name: Dynamic GUI Patch
-    runs-on: self-hosted
-    steps:
-      - name: Execute Patch Script
-        run: |
-          # On s'assure que le script est exécutable
-          chmod +x /home/medyassine/GreenDevOps/ecofloc/gui/patch_gui.sh
-          
-          # Le script va attendre tout seul que les fichiers apparaissent dans /dev/shm
-          bash /home/medyassine/GreenDevOps/ecofloc/gui/patch_gui.sh
-          
-          # On s'assure que l'utilisateur du GUI peut lire les fichiers créés par root
-          sudo chmod 666 /dev/shm/ECOFLOC_*
+  
 # -----------------------
 # SETUP
 # -----------------------
